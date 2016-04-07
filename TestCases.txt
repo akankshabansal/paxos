@@ -1,0 +1,399 @@
+Testing Cases for Paxos:
+
+Test Case 1:
+Env :
+Replicas: 2
+Leaders: 1
+Acceptors:  3
+
+Flow :
+Replica0: Proposes request <client : 1, request :1, slot : 1>
+Replica1: Proposes request <client : 2, request :1, slot : 1>
+Decision : <client : 2, request :1, slot : 1>
+
+Replica0: proposes again <client : 1, request :1, slot : 2>
+
+$$
+TX 2:Deposit$0$22 replica0:1000
+TX 1:Deposit$0$11 replica1:10000
+
+----------------------------------------------------------------------
+Test Case 2:
+Env :
+Replicas: 2
+Leaders: 1
+Acceptors:  3
+
+Flow :
+Replica0: Proposes request <client : 1, request :0, slot : 1>
+Decision : <client : 1, request :0, slot : 1>  sent to all Replicas
+Replica1: Gets the client request after the decision. Do not propose the request as the decision is already there.
+
+$$
+TX 1:Deposit$0$11 replica1:5000
+
+------------------------------------------------------------------------
+Test Case 3:
+Env :
+Replicas: 2
+Leaders: 1
+Acceptors:  3
+
+Flow :
+Replica0: Proposes request <client : 2, request :1, slot : 1> ,<client : 1, request :1, slot : 2>
+Replica1: Proposes request <client : 1, request :1, slot : 1>
+(because it didnt receive any decision for this request yet thus decision for slot 4 is not yet in for the Replica 2)
+
+Decision : <client : 1, request :1, slot : 1>
+Decision : <client : 2, request :1, slot : 1> to slot 3.
+Decision : <client : 1, request :1, slot : 2>
+
+$$
+TX 1:Deposit$1$20 replica1:5000
+TX 2:Deposit$2$30 replica0:1000
+## replica0=700
+## Check Replica 1 ...it should get two decisions 2$30 for different slot numbers, but it performs only the first.
+
+Replica 1 and 2 : Dont process again the same request <client : 2, request :2, slot : 2>
+------------------------------------------------------------------------
+
+Test Case 4:
+Env :
+Replicas: 2
+Leaders: 2
+Acceptors:  3
+
+Flow :
+Leader 1: Gets adopted by the acceptors
+Leader 2: Gets adopted by the acceptors
+Leader 1: Gets pre-empted by when sends commander
+Leader 2: is able to send the decision
+
+
+Testing Failure detection :
+
+
+Changes in Congif.properties
+failureDetection=TRUE
+failureDetectionTimeout=1000
+
+Test 1:
+Env :
+Replicas: 2
+Leaders: 2
+Acceptors:  3
+
+Flow :
+
+Leader 1 is the Master Leader
+Leader 0 is monitoring Leader 1
+
+Leader 1 dies.
+Leader 0 time-out and acts as the leader.
+Replicas send a request to both the leaders.
+Leader 0 gets the values decided and sends decision to all
+
+Cmds:
+> TX 1:Withdraw$0$50
+> KILL leader1
+> TX 1:Withdraw$0$50
+
+Test 2:
+Env :
+Replicas: 2
+Leaders: 3
+Acceptors:  3
+Client requests :
+
+Flow :
+
+All the three leaders send the Phase one msg to all the three acceptors. Leader 0 and Leader 1 get  pre-empted with the ballot no of Leader 2.
+Leader 2 is the Master Leader
+Leader 0 is monitoring Leader 2
+Leader 1 is monitoring Leader 2
+
+Leader 1 dies: No change in the Leader 0 and 2
+Leader 2 dies:
+Leader 0 is the new Leader (sends a new Scout)
+
+Cmds:
+Config.properties: leader0=400(delay leader0 more than the rest of the leaders)
+> TX 1:Withdraw$0$50
+> KILL leader1
+> KILL leader2
+We don't need to show any cmd getting executed even the presence of Scouts and commanders in the logs of the new leader (in this case Leader 0 show that the 0 is not the new Current alive Leader).
+
+Test 3:
+Env :
+Replicas: 2
+Leaders: 3
+Acceptors:  3
+
+Flow :
+All the three leaders send the Phase one msg to all the three acceptors. Leader 0 gets pre-empted with the ballot no of Leader 1. Leader 1 get  pre-empted with the ballot no of Leader 2.
+Leader 2 is the Master Leader
+Leader 1 is monitoring Leader 2
+Leader 0 is monitoring Leader 1
+
+Leader 2 dies:
+Leader 1 dies:
+Leader 0 is the Leader.
+
+We don't need to show any cmd getting executed even the presence of Scouts and commanders in the logs of the new leader (in this case Leader 1 and then the Leader 0 show who is the current leader).
+
+Cmds:
+> TX 1:Withdraw$0$50
+> KILL leader2
+> KILL leader1
+> TX 1:Withdraw$0$50
+
+
+Test 4:
+Env :
+Replicas: 2
+Leaders: 3
+Acceptors:  3
+
+Flow :
+All the three leaders send the Phase one msg to all the three acceptors. Leader 0 gets pre-empted with the ballot no of Leader 1. Leader 1 get  pre-empted with the ballot no of Leader 2.
+Leader 2 is the Master Leader
+Leader 1 is monitoring Leader 2
+Leader 0 is monitoring Leader 1
+
+Leader 1 dies:
+Leader 0 sends a scout again and gets pre-empted because the ballot of Leader 2 is of more weight.
+Leader 0 monitors Leader 2
+
+We don't need to show any cmd getting executed even the presence of Scouts should be enough to show who is the current leader.
+
+Test 5:
+Env :
+Replicas: 2
+Leaders: 2
+Acceptors:  3
+
+Flow :
+
+Leader 1 is the Master Leader
+Leader 0 is monitoring Leader 1
+
+Leader 1 slows down.
+Leader 0 time-out and acts as the leader.
+Replica 1 sends a request to both the leaders.
+Leader 1 gets pre-empted when it sends the commander and starts listening to Leader 0.
+Leader 0 gets the values decided and sends decision to all
+
+
+Cmds:
+TX 1:Withdraw$0$50
+DELAY leader1 2000
+TX 1:Withdraw$0$50
+
+NOTE:
+When the Leader0 timesout it starts a new scout and then sends commander for all the decisions that have been made.
+When the Leader1 gets the request from the replica, it sends the Commander to Acceptor's and gets pre-empted.
+
+Test 6:
+Env :
+Replicas: 2
+Leaders: 2
+Acceptors:  3
+
+Flow :
+
+Leader 1 is the Master Leader
+Leader 0 is monitoring Leader 1
+
+
+Replica 0 sends a request <client : 1, request :2, slot : 2> to Leader 1 and not Leader 0.
+Replica 1 sends a request <client : 3, request :1, slot : 2> to Leader 0 and not Leader 1.
+
+Leader 1 gets Replica 0 msg accepted by Acceptor 0 and Acceptor 1.
+Leader 1 dies before sending any msg to the Replica’s.
+Leader 0 time-out and acts as the leader.
+Leader 0 gets Request <client : 3, request :1, slot : 2> from Replica 1
+Leader 0 should decide on the value : <client : 1, request :2, slot : 2> and send to both the replicas.
+Replica 1 should propose the value <client : 3, request :1, slot : 2> again.
+
+Cmds NOT YET COMPLETE:
+> TX 1:Withdraw$0$50
+> KILL commander:leader1:BN(0,leader1) : SEND acceptor2 1
+> TX 1:Withdraw$0$50
+> TX 1:Withdraw$0$50
+
+
+NOTE:
+When the Leader0 timeout it starts a new scout and then sends commander for all the decisions that have been made.
+When the Leader1 gets the request from the replica, it sends the Commander to Acceptor's and gets pre-empted.
+
+
+Test 7:
+Env :
+Replicas: 2
+Leaders: 2
+Acceptors:  3
+
+Flow :
+Leader 1 is the Master Leader
+Leader 0 is monitoring Leader 1
+
+Replica 0 sends a request <client : 1, request :2, slot : 2> to Leader 1 and not Leader 0.
+Replica 1 sends a request <client : 3, request :1, slot : 2> to Leader 0 and not Leader 1.
+
+Leader 1. gets one value accepted by Acceptor 0.
+Leader 1 Slows down before sending any msg to acceptor 1 and acceptor 2.
+Leader 0 timeouts and acts as the leader.
+Leader 0 gets Request <client : 3, request :1, slot : 2> from Replica 1
+Leader 0 gets the value : <client : 3, request :2, slot : 2> decided.
+Replica 0 should propose the value <client : 1, request :1, slot : 2> again.
+
+Test 8:
+Env :
+Replicas: 2
+Leaders: 2
+Acceptors:  3
+
+Flow :
+Leader 1 is the Master Leader
+Leader 0 is monitoring Leader 1
+
+Replica 0 sends a request <client : 1, request :2, slot : 2> to Leader 1 and not Leader 0.
+Replica 1 sends a request <client : 3, request :1, slot : 2> to Leader 0 and not Leader 1.
+
+Leader 1 gets one value accepted by Acceptor 0.
+Leader 1 Slows down before sending any msg to Acceptor 1 and acceptor 2.
+Leader 0 timeouts and acts as the leader.
+Leader 0 gets Request <client : 3, request :1, slot : 2> from Replica 1 accepted by Acceptor’s
+Leader 1 should decide on the value : <client : 3, request :2, slot : 2>
+
+
+TO CHECK IF we need the functionality to test the messages begin sent by the commanders to the acceptors slow down the messages being sent individually to the acceptors
+
+
+READ ONLY MSG Testing :
+
+FAILURE DETECTION IS OFF
+CASE 1: Leader 0 is the Leader and Leader 1 will try to become the leader in between the execution of the Leader0 execution
+When the leader has been able to get adopted
+
+Test Env :
+Replicas: 2
+Leaders: 2
+Acceptors:  3
+
+Flow :
+
+Leader 0 is the adopted leader. Leader1 has a higher amount of delay.
+Replica0 sends the msg to all the Leaders to execute <client : 1, request :1, slot : 1, UPD>
+Leader0 gets the value accepted by all the acceptors
+Leader0 sends the msg to all the replicas.
+Replica0 sends the msg to all the Leaders to execute <client : 1, request :2, RO>
+
+
+CASE 2: Leader 0 is the Leader and Leader 1 will try to become the leader in between the execution of the Leader0 execution
+When the leader has been able to get adopted but not able to send any message down to the replicas.
+
+CASE 3: Leader 0 is the Leader and Leader 1 will try to become the leader in between the execution of the Leader0 execution
+When the leader has not been able to get adopted.
+
+CASE 4: Leader 0 is the Leader
+Leader 1 will send a message to get a read only value adopted by the acceptors.
+Will be able to get the value adopted by only one of the accpetors (not majority)
+
+CASE 5: Leader 0 is the Leader
+Leader 1 will send a message to get a read only value adopted by the acceptors.
+Was able to get the majority of acceptors to adopt its Pvalue, because leader 1 has a higher ballot no.
+Now some of the acceptors can the RO proposed by the leader0, and the other half have the Pvalue of Leader1.
+
+Case 6:
+Execute multiple ready only cmds together without executing any upd cmd
+TX 1:Inquiry$4$100 replica1:30000
+TX 1:Inquiry$3$100 replica1:30000
+
+
+NOTE:
+Same read only cmd comes to the replica multiple times, for the same slot
+WAY 1: it is ok for the replica to execute the read only again because the state will not change.
+WAY 2: he can ignore the read only cmds which it has executed. by maintaining a set of Read only cmds already performed
+
+
+Case 7:
+Execute a write cmd and then read cmd and then a read only cmd again :
+TX 1:Withdraw$0$50
+TX 1:Inquiry$4$100 replica1:30000
+TX 1:Inquiry$4$100 replica1:30000
+
+
+
+Case 8:
+Execute a read cmd and then write cmd and then a read only cmd again :
+BUG: THE SLOT NO proposed by the replica's is 2 and not 1.
+
+CASE 9:
+The leader which is active dies even before sending any msg to the acceptor.
+TO CHECK : Will the new leader do anything to process the read only msg.
+
+
+FAILURE DETECTION IS ON:
+
+
+IMPELEMENTATION CHECKS:
+The replica should not be performing the same readonly more than once.
+The leader should be sending the msg to all the replicas about what slot they should be executing the cmd at
+The Acceptor should be able to merge the pvalue if the dummy cmd exists for the same slot no and same ballot no.
+The replica gets the value after the the slot has been executed
+
+
+IMPLEMENTATION ISSUES:
+Found with :
+1.
+TX 1:Inquiry$4 replica1:30000
+TX 3:Withdraw$4$50
+TX 1:Deposit$4$50
+TX 1:Inquiry$4 replica0:30000
+TX 2:Transfer$4$100$2
+TX 1:Deposit$4$50
+TX 1:Inquiry$4 replica0:30000
+TX 2:Inquiry$2 replica1:30000
+TX 3:Inquiry$4 replica0:30000
+TX 1:Inquiry$2 replica1:30000
+TX 4:Inquiry$4 replica0:30000
+TX 1:Deposit$4$50
+TX 2:Deposit$4$50
+TX 3:Deposit$4$50
+TX 1:Deposit$4$50
+TX 1:Deposit$4$50
+TX 4:Deposit$4$50
+TX 1:Inquiry$4 replica0:30000
+TX 2:Inquiry$2 replica1:30000
+TX 3:Inquiry$4 replica0:30000
+TX 2:Deposit$4$50
+TX 1:Deposit$4$50
+
+
+Replica not performing the RO for slot 2.
+
+
+2. Leader once gets adopted, creates a new commander for every proposal
+
+TX 1:Inquiry$4$100
+TX 1:Withdraw$0$50
+TX 1:Inquiry$4$100
+
+
+3. The Client sent multiple RO cmds to same replica(when we have only one replica and one leader)
+
+
+
+######Test Case Repro: [Leader gets killed after sending one msg to acceptor, another leader doesnt get
+###### msg from Replica but gets it from acceptor and sends it to the Replica
+Reverse up the leaders -- Uncomment Line 49,50 and comment 51 in Replica.java
+commander\:leader1\:BN(0,leader1)\:2_KILL=SEND\:acceptor1\:1
+nReplicas=1
+
+TX 1:Withdraw$0$50
+DELAY replica0 50000
+TX 1:Withdraw$0$50
+KILL leader1
+> Replica0 will get msg back from Leader0
+######
